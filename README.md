@@ -1,222 +1,246 @@
 # PromptPM
-A CLI-first package manager for prompt modules and agent logic, with deterministic validation, testing, dependency resolution, and publishing.
+PromptPM is a CLI-first package manager for prompt modules and agent logic, with deterministic validation, testing, dependency resolution, and local-first publishing.
 
-## High-Level Overview
-PromptPM applies package-management discipline to prompt engineering.
+## 1. Motivation and Problem Statement
+Teams using prompts in production usually encounter the same failure patterns:
 
-- Prompt definitions are treated as software artifacts.
-- Modules are versioned, testable, and composable.
-- CLI behavior is deterministic and CI-friendly.
-- Registry operations are local-first in the current implementation.
+- Prompt text lives inside application code, so prompt changes are mixed with runtime logic changes.
+- Prompt changes are hard to review as discrete, versioned artifacts.
+- Dependencies between prompts are implicit and difficult to track.
+- Contract mismatches are discovered late, often during integration.
+- CI systems need stable, machine-readable command behavior and predictable exit codes.
 
-| Area | Current Behavior |
+PromptPM addresses this by making prompt modules explicit, versioned, validated, and testable through a deterministic CLI workflow.
+
+## 2. What PromptPM Is and Is Not
+| PromptPM Is | PromptPM Is Not |
 | --- | --- |
-| Module lifecycle | `init`, `validate`, `test`, `publish`, `install` |
-| Registry model | Local filesystem registry |
-| Dependency model | SemVer ranges, deterministic resolution, cycle rejection |
-| Quality gates | Schema validation + module tests before publish |
-| Automation support | Stable output modes and exit-code contract |
+| A package manager for prompt modules | A runtime that executes prompts against models |
+| A schema and semantic contract validator | A UI prompt editor |
+| A deterministic test runner for module assertions | A model/provider-specific optimization layer |
+| A dependency resolver with semver range support | A telemetry or analytics platform |
+| A local-first immutable registry workflow | A source of undocumented behavior |
 
 > PromptPM behavior is defined by `docs/SPEC.md`, `docs/PROMPT_MODULE_SCHEMA.md`, and `docs/CLI_COMMAND_CONTRACT.md`.
 
-## Problem Statement
-Teams building prompt-driven systems run into recurring engineering problems:
-
-- Prompt logic is often embedded directly in application code.
-- Changes are hard to review as versioned, isolated artifacts.
-- Dependency relationships between prompts are implicit.
-- Compatibility issues surface late in integration or production.
-- CI pipelines need stable, machine-readable command behavior.
-
-PromptPM addresses these issues with explicit module contracts, deterministic command behavior, and local registry workflows.
-
-## Core Concepts
+## 3. Core Concepts
 ### Prompt Module
-A Prompt Module is the primary unit managed by PromptPM.
+A Prompt Module is the unit of packaging and reuse.
 
-A module contains:
+A module consists of:
 
-- `promptpm.yaml` (or `promptpm.toml`) with module metadata
-- `template.prompt` prompt template file
+- metadata (`name`, `version`, `description`)
+- prompt template file (`template.prompt`)
 - semantic interface definition
-- optional dependencies
-- optional tests
+- optional dependency declarations
+- optional module tests
+
+In practice, this makes prompt changes reviewable and versioned like other software artifacts.
 
 ### Semantic Interface
-A Semantic Interface defines what a module means and guarantees, not just text format.
+A Semantic Interface defines what a module is expected to do, not just how text is formatted.
 
-Key elements:
+It includes:
 
-- intent
-- inputs
-- outputs
-- optional preconditions
-- optional postconditions
+- `intent`
+- `inputs`
+- `outputs`
+- optional `preconditions`
+- optional `postconditions`
+
+This enables static checks for contract completeness and safer module composition.
 
 ### Registry
-A Registry stores versioned modules. The current PromptPM implementation uses a local filesystem registry.
+A Registry stores versioned modules. The current implementation uses a local filesystem registry.
 
-Registry behavior includes:
+Registry characteristics:
 
-- deterministic module layout
-- install and lookup by name/version
-- immutability checks for published versions
+- deterministic directory layout
+- lookup by module name and version
+- immutability enforcement for published versions
 
 ### Unit Tests
-Modules can declare tests that assert expected behavior.
+Module tests define expected behavior for prompt templates and assertions.
 
-Current test runner focus:
+Current test model supports deterministic execution with structured diagnostics, and publish is gated on successful test results.
 
-- deterministic execution
-- clear per-assertion diagnostics
-- publish-time gating (tests must pass before publish)
+## 4. Architecture Overview
+PromptPM separates command orchestration from deterministic core logic.
 
-## Architecture Overview
-PromptPM is organized as a CLI orchestration layer over deterministic core components.
-
+### High-Level System Architecture
 ```mermaid
 flowchart LR
-    U[Developer or CI] --> C[promptpm CLI]
+    U[Developer or CI] --> CLI[promptpm CLI]
 
-    C --> M[Module Directory]
-    C --> V[Schema Loader and Validator]
-    C --> T[Test Runner]
-    C --> R[Dependency Resolver]
-    C --> L[Local Registry]
+    CLI --> OUT[Output Formatter
+default | json | pretty]
+    CLI --> SCH[Schema Loader and Validator]
+    CLI --> TRT[Test Runner]
+    CLI --> RES[Dependency Resolver]
+    CLI --> REG[Local Registry]
 
-    R --> L
-    T --> M
-    V --> M
+    SCH --> MOD[promptpm.yaml / promptpm.toml]
+    TRT --> TMP[template.prompt]
+    RES --> REG
+    REG --> STORE[modules/<name>/<version>]
 ```
 
-| Layer | Responsibility |
-| --- | --- |
-| CLI (`promptpm/commands`) | Parse arguments, invoke core logic, emit structured output |
-| Core (`promptpm/core`) | Validation, semver, resolution, registry, test execution |
-| Schema (`schema_and_validator.py`) | Load and validate module schema/interface rules |
-| Registry storage | Local, deterministic, immutable published versions |
+### Prompt Module Lifecycle
+```mermaid
+flowchart TD
+    A[init] --> B[author module files]
+    B --> C[validate]
+    C -->|validation error| B
+    C -->|ok| D[test]
+    D -->|test failure| B
+    D -->|ok| E[publish]
+    E --> F[immutable version in local registry]
+    F --> G[install by dependent module]
+```
 
-## How PromptPM Works
-1. Initialize a module scaffold in a working directory.
-2. Define module metadata, template placeholders, and interface contract.
-3. Run schema/interface validation.
-4. Run module tests for deterministic quality checks.
-5. Publish to the local registry only when validation and tests succeed.
-6. Resolve and install dependencies by semantic version constraints.
-7. Inspect installed modules with `list` and `info`.
-
-## CLI Overview
-| Command | Description |
+### Component Responsibilities
+| Component | Responsibility |
 | --- | --- |
-| `promptpm init [--name <name>] [--version <version>]` | Initialize a new module skeleton in the current directory. |
-| `promptpm validate [path]` | Validate module schema and semantic interface structure. |
-| `promptpm test [path]` | Run declared module tests with structured diagnostics. |
-| `promptpm install [path]` | Resolve dependencies and install from local registry. |
-| `promptpm publish [path]` | Validate, test, and publish immutably to local registry. |
-| `promptpm list` | List locally installed modules in deterministic order. |
-| `promptpm info <module-name>` | Show module metadata and semantic interface details. |
+| `promptpm/commands` | CLI command entrypoints and orchestration |
+| `promptpm/core/schema.py` + `schema_and_validator.py` | Module loading and schema/interface validation |
+| `promptpm/core/test_runner.py` | Deterministic test execution and assertion diagnostics |
+| `promptpm/core/semver.py` | Semantic version parsing, comparison, and range evaluation |
+| `promptpm/core/resolver.py` | Deterministic transitive dependency resolution and cycle detection |
+| `promptpm/core/registry.py` | Local registry install/lookup/list + immutability checks |
+| `promptpm/utils/output.py` | Deterministic output formatting and emission |
+
+## 5. How PromptPM Works Internally
+For each CLI command, PromptPM follows a strict execution pattern:
+
+1. Parse global and command-specific flags.
+2. Resolve output mode (`default`, `json`, `pretty`) and quiet behavior.
+3. Load module metadata and prompt/interface definitions from disk when needed.
+4. Apply schema and semantic validation rules before dependent operations.
+5. Execute command-specific core logic:
+   - `test`: run assertions and collect structured failures.
+   - `install`: resolve dependency graph using semver ranges.
+   - `publish`: validate, test, enforce immutability, then install into local registry.
+6. Emit deterministic output payloads.
+7. Exit with documented command contract codes.
+
+This design keeps behavior scriptable and suitable for automated gating.
+
+## 6. CLI Overview
+### Commands
+| Command | Purpose |
+| --- | --- |
+| `promptpm init [--name <name>] [--version <version>]` | Initialize a module scaffold in the current directory. |
+| `promptpm validate [path]` | Validate schema, semantic interface, and placeholder consistency. |
+| `promptpm test [path]` | Run module tests and return structured diagnostics on failure. |
+| `promptpm install [path]` | Resolve and install dependencies from the local registry. |
+| `promptpm publish [path]` | Validate + test + publish immutably to local registry. |
+| `promptpm list` | List installed modules in deterministic order. |
+| `promptpm info <module-name>` | Show metadata and semantic interface for installed module versions. |
 
 ### Global Flags
-| Flag | Purpose |
+| Flag | Behavior |
 | --- | --- |
-| `--config <path>` | Provide config path for CLI context. |
-| `--registry <path|url>` | Override registry path (current implementation enforces local filesystem path for registry operations). |
+| `--config <path>` | Set config path in CLI context. |
+| `--registry <path|url>` | Override registry location (registry operations currently require local filesystem paths). |
 | `--quiet` | Suppress non-error output. |
-| `--json` | Emit machine-readable JSON output. |
-| `--pretty` | Emit human-readable structured output. |
+| `--json` | Force JSON output. |
+| `--pretty` | Force human-readable structured output. |
 | `--version` | Print CLI version. |
 
-## Example Workflow
-Typical lifecycle for a module:
+### Exit Codes
+| Code | Meaning |
+| --- | --- |
+| `0` | Success |
+| `1` | Validation error |
+| `2` | Test failure |
+| `3` | Dependency resolution error |
+| `4` | Publish conflict |
+| `5` | Internal error |
 
-```mermaid
-flowchart LR
-    A[init] --> B[validate]
-    B --> C[test]
-    C --> D[publish]
-    D --> E[install]
-```
+## 7. Example End-to-End Workflow
+The sequence below uses two modules: one producer module published to a local registry, then one dependent module that installs it.
 
 ```bash
-# 1) Initialize
-promptpm init --name technical-summarizer --version 0.1.0
+# Create and publish a base module
+mkdir summarizer
+cd summarizer
+promptpm init --name summarizer --version 0.1.0
 
-# 2) Validate module contract
+# Edit promptpm.yaml, template.prompt, and tests as needed
 promptpm validate . --json
-
-# 3) Run tests
 promptpm test . --json
+promptpm publish . --registry ../.promptpm_registry --json
 
-# 4) Publish to local registry
-promptpm publish . --registry .promptpm_registry --json
+# Create a dependent module
+cd ..
+mkdir review-pipeline
+cd review-pipeline
+promptpm init --name review-pipeline --version 0.1.0
 
-# 5) Install dependencies for another module
-promptpm install . --registry .promptpm_registry --json
+# Add dependency in promptpm.yaml, for example:
+# dependencies:
+#   - name: summarizer
+#     version: "^0.1.0"
+
+promptpm install . --registry ../.promptpm_registry --json
 ```
 
-## Determinism, Safety, and Guarantees
-PromptPM is built around predictable behavior.
-
+## 8. Determinism, Safety, and Correctness Guarantees
 ### Determinism
-- Deterministic output modes (`default`, `--json`, `--pretty`).
-- Deterministic dependency resolution order.
-- Deterministic local registry layout.
+- Dependency resolution order is deterministic.
+- Output serialization is deterministic in JSON mode.
+- Local registry layout is deterministic.
 
 ### Safety
-- Prompt content is treated as untrusted module data.
-- PromptPM manages definitions and contracts; it does not execute prompts.
-- Local registry immutability checks detect tampering of published versions.
+- Prompt content is handled as untrusted module data.
+- PromptPM does not execute prompts or model calls.
+- Published versions are immutable and verified by manifest checks.
 
-### Guarantees
-- Explicit, documented exit codes for automation.
-- Structured error payloads with machine-readable error codes.
-- Publish flow enforces validation and passing tests before install to registry.
+### Correctness
+- Validation enforces required schema and interface structure.
+- Placeholder declarations are checked against interface inputs.
+- Publish requires validation and tests to pass.
+- Errors include machine-readable codes with stable exit behavior.
 
-## Non-Goals
-PromptPM does not aim to provide:
+## 9. Non-Goals and Explicit Exclusions
+PromptPM does not provide:
 
-- interactive prompt editing UI
-- runtime model execution engines
-- provider-specific optimization logic
-- hidden telemetry or analytics
-- undocumented command behavior
+- model runtime orchestration
+- interactive authoring interfaces
+- vendor-specific integrations
+- remote network registry guarantees in current implementation
+- hidden side effects outside defined command contracts
 
-## CI/CD Integration
-PromptPM is designed for non-interactive pipeline use.
+## 10. CI/CD Integration Guidance
+PromptPM is designed for non-interactive pipeline execution.
 
-Recommended gate sequence:
-
+### Recommended pipeline stages
 ```bash
 promptpm validate . --json
 promptpm test . --json
 promptpm install . --registry .promptpm_registry --json
 ```
 
-Release stage:
-
+### Publish stage
 ```bash
 promptpm publish . --registry .promptpm_registry --json
 ```
 
-Exit-code contract (`docs/CLI_COMMAND_CONTRACT.md`):
+### Integration guidance
+- Prefer `--json` for machine parsing.
+- Gate merges/releases on non-zero exit codes.
+- Keep registry path explicit in CI jobs for reproducibility.
 
-- `0` success
-- `1` validation error
-- `2` test failure
-- `3` dependency resolution error
-- `4` publish conflict
-- `5` internal error
+## 11. Project Maturity and Stability Expectations
+- Current release line is `v0.1.x`.
+- Core CLI workflow and local registry behavior are implemented.
+- Specification compliance and deterministic behavior are prioritized over rapid feature expansion.
+- Behavior changes should be spec-driven and tested before adoption.
 
-## Project Status and Stability
-- Current release line: **v0.1.x**.
-- CLI command set is implemented and covered by tests.
-- Local registry workflow is implemented and deterministic.
-- Specifications and contracts are maintained in `docs/`.
+## 12. Contributing
+Contribution guidelines are documented in [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
-> Stability is anchored to specification compliance and deterministic behavior, not rapid feature expansion.
+Contributors should follow spec-first development and align changes with the documents in `docs/`.
 
-## Contributing
-See [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, coding standards, test requirements, and PR workflow.
-
-## License
-A `LICENSE` file is not currently present in this repository. Add one before redistribution or production adoption.
+## 13. License
+A `LICENSE` file is not currently present in this repository. Add a license file before redistribution or production adoption.
