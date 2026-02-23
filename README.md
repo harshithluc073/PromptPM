@@ -72,8 +72,7 @@ PromptPM separates command orchestration from deterministic core logic.
 flowchart LR
     U[Developer or CI] --> CLI[promptpm CLI]
 
-    CLI --> OUT[Output Formatter
-default | json | pretty]
+    CLI --> OUT[Output Formatter: default, json, pretty]
     CLI --> SCH[Schema Loader and Validator]
     CLI --> TRT[Test Runner]
     CLI --> RES[Dependency Resolver]
